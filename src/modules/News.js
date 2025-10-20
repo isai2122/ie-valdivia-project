@@ -1,7 +1,22 @@
 import { renderPublishView } from './PublishView.js';
 
-export function renderNews(container, posts = null) {
-  const allPosts = posts || JSON.parse(localStorage.getItem("posts") || "[]");
+export async function renderNews(container, posts = null) {
+  const apiUrl = import.meta.env.VITE_API_URL || ";
+  let allPosts = [];
+  if (!posts) {
+    try {
+      const response = await fetch(`${apiUrl}/api/posts`);
+      if (response.ok) {
+        allPosts = await response.json();
+      } else {
+        console.error("Error fetching posts:", response.statusText);
+      }
+    } catch (error) {
+      console.error("Error fetching posts:", error);
+    }
+  } else {
+    allPosts = posts;
+  }
   const newsPosts = allPosts.filter(post => post.category === 'noticias');
   const user = JSON.parse(localStorage.getItem("user") || "{}");
 

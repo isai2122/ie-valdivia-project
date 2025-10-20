@@ -183,8 +183,7 @@ async function handlePublishSubmit(modal, onComplete, editPost) {
     }
 
     const postData = {
-      id: editPost ? editPost.id : Date.now(),
-      title,
+      id: editPost ? editPost.id : undefined,      title,
       description,
       category,
       image: mediaUrl,
@@ -195,24 +194,29 @@ async function handlePublishSubmit(modal, onComplete, editPost) {
       updatedAt: new Date().toISOString()
     };
 
-    // Save to localStorage
-    let posts = JSON.parse(localStorage.getItem("posts") || "[]");
-    
-    if (editPost) {
-      // Update existing post
-      const index = posts.findIndex(p => p.id === editPost.id);
-      if (index !== -1) {
-        posts[index] = postData;
-      }
+    const apiUrl = import.meta.env.VITE_API_URL || 'http://localhost:8000'; // Default to local backend if not set
+    let response;
+    if (isEditing) {
+      response = await fetch(`${apiUrl}/api/posts/${editPost.id}`, {
+        method: "PUT",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(postData),
+      });
     } else {
-      // Add new post
-      posts.unshift(postData);
+      response = await fetch(`${apiUrl}/api/posts`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(postData),
+      });
     }
-    
-    localStorage.setItem("posts", JSON.stringify(posts));
+
+    if (!response.ok) {
+      throw new Error("Error al guardar la publicación.");
+    }
+    const result = await response.json();
+
     // trigger cross-tab and same-tab update
-    localStorage.setItem('posts_update_ts', Date.now().toString());
-    window.dispatchEvent(new Event('app:postsUpdated'));
+    window.dispatchEvent(new Event("app:postsUpdated"));
 
     // Success callback
     if (typeof onComplete === 'function') {
