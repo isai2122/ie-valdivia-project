@@ -119,7 +119,7 @@ export function renderPublish(host = document.body, onNewPost, editPost = null) 
   // Form submission
   modal.querySelector('#publishForm').addEventListener('submit', async (e) => {
     e.preventDefault();
-    await handlePublishSubmit(modal, onNewPost, editPost);
+    await handlePublishSubmit(modal, onNewPost, editPost, isEditing);
   });
 
   // Live preview updates
@@ -140,7 +140,7 @@ export function renderEditPost(host, post, onEditComplete) {
   renderPublish(host, onEditComplete, post);
 }
 
-async function handlePublishSubmit(modal, onComplete, editPost) {
+async function handlePublishSubmit(modal, onComplete, editPost, isEditing) {
   const submitBtn = modal.querySelector('#submitPublish');
   const originalText = submitBtn.textContent;
   submitBtn.innerHTML = '<span class="spinner"></span> Procesando...';
