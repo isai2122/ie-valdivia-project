@@ -43,10 +43,14 @@ class PostCreate(BaseModel):
 
 @api_router.post("/posts", response_model=Post)
 async def create_post(post_in: PostCreate):
-    post_data = post_in.dict()
-    post = Post(**post_data)
-    await db.posts.insert_one(post.dict())
-    return post
+    try:
+        post_data = post_in.dict()
+        post = Post(**post_data)
+        await db.posts.insert_one(post.dict())
+        return post
+    except Exception as e:
+        logging.error(f"Error creating post: {e}")
+        raise HTTPException(status_code=500, detail="Internal server error while creating post.")
 
 @api_router.get("/posts", response_model=List[Post])
 async def get_posts():
