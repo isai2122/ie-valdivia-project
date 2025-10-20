@@ -197,13 +197,13 @@ async function handlePublishSubmit(modal, onComplete, editPost, isEditing) {
     const apiUrl = import.meta.env.VITE_API_URL || 'http://localhost:8000'; // Default to local backend if not set
     let response;
     if (isEditing) {
-      response = await fetch(`${apiUrl}/api/posts/${editPost.id}`, {
+      response = await fetch(`${apiUrl}/posts/${editPost.id}`, {
         method: "PUT",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify(postData),
       });
     } else {
-      response = await fetch(`${apiUrl}/api/posts`, {
+      response = await fetch(`${apiUrl}/posts`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify(postData),
