@@ -89,8 +89,13 @@ async function request(path, options = {}) {
 }
 
 export async function fetchPosts() {
-  const data = await request('/api/posts');
-  return writeCachedPosts(asArray(data).map(normalizePost));
+  try {
+    const data = await request('/api/posts');
+    return writeCachedPosts(asArray(data).map(normalizePost));
+  } catch (error) {
+    console.warn('Error fetching posts, using cache:', error);
+    return readCachedPosts();
+  }
 }
 
 export async function fetchPostById(id) {
