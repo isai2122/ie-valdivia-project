@@ -8,12 +8,13 @@ import { renderAbout } from "./modules/About.js";
 import { renderProfile } from "./modules/Profile.js";
 import { renderFloatingMenu } from "./modules/FloatingMenu.js";
 import { setupBannerSection } from "./modules/Banners.js";
+import { readCachedPosts, writeCachedPosts } from "./utils/postsApi.js";
 
 const app = document.getElementById("root");
 
 // Inicialización principal - NO forzar login
 function initializeApp() {
-  let allPosts = JSON.parse(localStorage.getItem("posts") || "[]");
+  let allPosts = readCachedPosts();
 
   // Renderizar layout principal
   renderLayout(app, (page) => {
@@ -52,14 +53,9 @@ function initializeApp() {
         // Importar dinámicamente y abrir modal
         import("./modules/Publish.js").then(mod => {
           mod.renderPublish(document.body, (newPost) => {
-            // Actualizar posts locales
-            allPosts.unshift(newPost);
-            localStorage.setItem("posts", JSON.stringify(allPosts));
-    // trigger cross-tab and same-tab update
-    localStorage.setItem('posts_update_ts', Date.now().toString());
-    window.dispatchEvent(new Event('app:postsUpdated'));
-            
-            // Toast de confirmación
+            allPosts = [newPost, ...allPosts.filter(post => String(post.id) !== String(newPost.id))];
+            writeCachedPosts(allPosts);
+
             showToast("✅ Publicación creada exitosamente", "success");
             
             // Refrescar vista actual si es necesario

@@ -1,4 +1,6 @@
 // src/modules/Publish.js
+import { createPost, normalizePost, updatePost } from "../utils/postsApi.js";
+
 export function renderPublish(host = document.body, onNewPost, editPost = null) {
   const user = JSON.parse(localStorage.getItem("user") || "{}");
   if (user.role !== "admin") {
@@ -183,44 +185,26 @@ async function handlePublishSubmit(modal, onComplete, editPost, isEditing) {
     }
 
     const postData = {
-      id: editPost ? editPost.id : undefined,      title,
+      id: editPost ? editPost.id : undefined,
+      title,
       description,
       category,
+      author: editPost?.author || userNameFromSession(),
       image: mediaUrl,
       type: finalMediaType,
+      media_type: finalMediaType === 'video' ? 'video' : 'image',
       likes: editPost ? editPost.likes : 0,
       comments: editPost ? editPost.comments : [],
       createdAt: editPost ? editPost.createdAt : new Date().toISOString(),
       updatedAt: new Date().toISOString()
     };
 
-    const apiUrl = import.meta.env.VITE_API_URL || 'https://ie-valdivia-backend.onrender.com';
-    let response;
-    if (isEditing) {
-      response = await fetch(`${apiUrl}/api/posts/${editPost.id}`, {
-        method: "PUT",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify(postData),
-      });
-    } else {
-      response = await fetch(`${apiUrl}/api/posts`, {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify(postData),
-      });
-    }
+    const result = isEditing
+      ? await updatePost(editPost.id, postData)
+      : await createPost(postData);
 
-    if (!response.ok) {
-      throw new Error("Error al guardar la publicación.");
-    }
-    const result = await response.json();
-
-    // trigger cross-tab and same-tab update
-    window.dispatchEvent(new Event("app:postsUpdated"));
-
-    // Success callback
     if (typeof onComplete === 'function') {
-      onComplete(postData);
+      onComplete(normalizePost(result));
     }
 
     modal.remove();
@@ -231,6 +215,11 @@ async function handlePublishSubmit(modal, onComplete, editPost, isEditing) {
     submitBtn.textContent = originalText;
     submitBtn.disabled = false;
   }
+}
+
+function userNameFromSession() {
+  const user = JSON.parse(localStorage.getItem('user') || '{}');
+  return user.username || user.name || 'admin';
 }
 
 function processExternalUrl(url) {

@@ -2,11 +2,13 @@
 // Versión completa y funcional del módulo de publicaciones.
 // Maneja render, detalle, comentarios, likes, edición y eliminación.
 
+import { appendCommentToPost, createPost, deletePostById, incrementPostLike, normalizePost, readCachedPosts, updatePost, writeCachedPosts } from "../utils/postsApi.js";
+
 export function renderPublishView(container = document.getElementById("postsContainer"), posts = null) {
   if (!container) return;
 
   // cargar posts (si se pasan por parámetro se usan)
-  const allPosts = Array.isArray(posts) ? posts.slice() : JSON.parse(localStorage.getItem("posts") || "[]");
+  const allPosts = Array.isArray(posts) ? posts.slice() : readCachedPosts();
   const user = JSON.parse(localStorage.getItem("user") || "{}");
 
   container.innerHTML = "";
@@ -70,7 +72,7 @@ function createPostCard(post, user) {
     const menuOptions = document.createElement('ul');
     menuOptions.className = 'menu-options';
     menuOptions.innerHTML = `
-      
+      <li class="menu-edit">Editar publicación</li>
       <li class="menu-delete danger">Eliminar publicación</li>
     `;
     menuWrap.appendChild(menuBtn);
@@ -83,16 +85,24 @@ function createPostCard(post, user) {
       menuOptions.classList.toggle('show');
     });
 
-    menuOptions.querySelector('.menu-edit').addEventListener('click', (e) => {
-      e.stopPropagation();
-      window.editPost && window.editPost(post.id);
-      menuOptions.classList.remove('show');
-    });
-    menuOptions.querySelector('.menu-delete').addEventListener('click', (e) => {
-      e.stopPropagation();
-      window.deletePost && window.deletePost(post.id);
-      menuOptions.classList.remove('show');
-    });
+    const editOption = menuOptions.querySelector('.menu-edit');
+    const deleteOption = menuOptions.querySelector('.menu-delete');
+
+    if (editOption) {
+      editOption.addEventListener('click', (e) => {
+        e.stopPropagation();
+        window.editPost && window.editPost(post.id);
+        menuOptions.classList.remove('show');
+      });
+    }
+
+    if (deleteOption) {
+      deleteOption.addEventListener('click', (e) => {
+        e.stopPropagation();
+        window.deletePost && window.deletePost(post.id);
+        menuOptions.classList.remove('show');
+      });
+    }
   }
 
   // Media
@@ -198,8 +208,8 @@ function renderPostMediaHTML(post) {
 /* ------------------ Detalle modal ------------------ */
 
 export function openPostDetailModalById(id) {
-  const posts = JSON.parse(localStorage.getItem("posts") || "[]");
-  const post = posts.find(p => p.id === id);
+  const posts = readCachedPosts();
+  const post = posts.find(p => String(p.id) === String(id));
   if (!post) return;
   openPostDetailModal(post);
 }
@@ -260,8 +270,8 @@ export function openPostDetailModal(postParam) {
   modal.addEventListener('click', e => { if (e.target === modal) modal.remove(); });
 
   function reloadComments() {
-    const posts = JSON.parse(localStorage.getItem("posts") || "[]");
-    const fresh = posts.find(p => p.id === post.id);
+    const posts = readCachedPosts();
+    const fresh = posts.find(p => String(p.id) === String(post.id));
     const comments = (fresh && fresh.comments) || [];
     const commentsList = modal.querySelector('#commentsList');
     if (!comments.length) {
@@ -279,7 +289,7 @@ export function openPostDetailModal(postParam) {
 
   reloadComments();
 
-  modal.querySelector('#commentForm').addEventListener('submit', (e) => {
+  modal.querySelector('#commentForm').addEventListener('submit', async (e) => {
     e.preventDefault();
     const input = modal.querySelector('#commentInput');
     const txt = input.value.trim();
@@ -288,31 +298,29 @@ export function openPostDetailModal(postParam) {
     const author = user.username || 'Visitante';
     const newComment = { text: txt, author, createdAt: new Date().toISOString() };
 
-    const posts = JSON.parse(localStorage.getItem('posts') || "[]");
-    const idx = posts.findIndex(p => p.id === post.id);
-    if (idx !== -1) {
-      posts[idx].comments = posts[idx].comments || [];
-      posts[idx].comments.push(newComment);
-      localStorage.setItem('posts', JSON.stringify(posts));
-    // trigger cross-tab and same-tab update
-    localStorage.setItem('posts_update_ts', Date.now().toString());
-    window.dispatchEvent(new Event('app:postsUpdated'));
-      // actualizar referencia local
-      post = posts[idx];
+    try {
+      post = await appendCommentToPost(post.id, newComment);
       reloadComments();
       input.value = '';
+      const counter = modal.querySelector('#likeDetail')?.nextElementSibling;
+      if (counter) counter.textContent = `${(post.comments || []).length} comentarios`;
       showToast("Comentario agregado", "success");
-      // actualizar contadores en lista
       refreshListViews();
+    } catch (error) {
+      console.error('Error al guardar el comentario:', error);
+      showToast(`❌ ${error.message || 'No se pudo guardar el comentario'}`, 'error');
     }
   });
 
-  modal.querySelector('#likeDetail').addEventListener('click', () => {
-    window.togglePostLike && window.togglePostLike(post.id);
-    const posts = JSON.parse(localStorage.getItem("posts") || "[]");
-    const p = posts.find(p => p.id === post.id);
-    if (p) modal.querySelector('#likeDetail').textContent = `${p.likes || 0} Me gusta`;
-    refreshListViews();
+  modal.querySelector('#likeDetail').addEventListener('click', async () => {
+    try {
+      post = await incrementPostLike(post.id);
+      modal.querySelector('#likeDetail').textContent = `${post.likes || 0} Me gusta`;
+      refreshListViews();
+    } catch (error) {
+      console.error('Error al guardar el like:', error);
+      showToast(`❌ ${error.message || 'No se pudo guardar el like'}`, 'error');
+    }
   });
 }
 
@@ -322,8 +330,8 @@ function openEditModal(postId = null) {
   const user = JSON.parse(localStorage.getItem('user') || "{}");
   if (user.role !== 'admin') return alert("Acceso restringido: solo administradores.");
 
-  const posts = JSON.parse(localStorage.getItem('posts') || "[]");
-  const editingPost = postId ? posts.find(p => p.id === postId) : null;
+  const posts = readCachedPosts();
+  const editingPost = postId ? posts.find(p => String(p.id) === String(postId)) : null;
 
   // modal único
   const existing = document.getElementById('postEditModal');
@@ -414,42 +422,38 @@ function openEditModal(postId = null) {
       finalType = 'image';
     }
 
-    const posts = JSON.parse(localStorage.getItem("posts") || "[]");
+    let updatedPosts = readCachedPosts();
 
     if (editingPost) {
-      const idx = posts.findIndex(p => p.id === editingPost.id);
-      if (idx !== -1) {
-        posts[idx] = {
-          ...posts[idx],
-          title,
-          description: desc,
-          category: cat,
-          image: mediaSrc,
-          type: finalType,
-          updatedAt: new Date().toISOString()
-        };
-      }
-      showToast("Publicación actualizada", "success");
-    } else {
-      const newPost = {
-        id: Date.now(),
+      const updatedPost = await updatePost(editingPost.id, {
+        ...editingPost,
         title,
         description: desc,
         category: cat,
         image: mediaSrc,
         type: finalType,
+        media_type: finalType === 'video' ? 'video' : 'image',
+        updatedAt: new Date().toISOString()
+      });
+      updatedPosts = updatedPosts.map(item => String(item.id) === String(updatedPost.id) ? normalizePost(updatedPost) : item);
+      showToast("Publicación actualizada", "success");
+    } else {
+      const newPost = await createPost({
+        title,
+        description: desc,
+        category: cat,
+        image: mediaSrc,
+        type: finalType,
+        media_type: finalType === 'video' ? 'video' : 'image',
         likes: 0,
         comments: [],
         createdAt: new Date().toISOString()
-      };
-      posts.unshift(newPost);
+      });
+      updatedPosts = [normalizePost(newPost), ...updatedPosts.filter(item => String(item.id) !== String(newPost.id))];
       showToast("Publicación creada", "success");
     }
 
-    localStorage.setItem("posts", JSON.stringify(posts));
-    // trigger cross-tab and same-tab update
-    localStorage.setItem('posts_update_ts', Date.now().toString());
-    window.dispatchEvent(new Event('app:postsUpdated'));
+    writeCachedPosts(updatedPosts);
     modal.remove();
     refreshListViews();
   });
@@ -460,41 +464,37 @@ function openEditModal(postId = null) {
 window.openPostDetail = (id) => openPostDetailModalById(id);
 window.openPostDetailModal = openPostDetailModal; // por compatibilidad
 
-window.togglePostLike = function(id) {
-  const posts = JSON.parse(localStorage.getItem("posts") || "[]");
-  const idx = posts.findIndex(p => p.id === id);
-  if (idx === -1) return;
-  posts[idx].likes = (posts[idx].likes || 0) + 1;
-  localStorage.setItem("posts", JSON.stringify(posts));
-    // trigger cross-tab and same-tab update
-    localStorage.setItem('posts_update_ts', Date.now().toString());
-    window.dispatchEvent(new Event('app:postsUpdated'));
-  refreshListViews();
+window.togglePostLike = async function(id) {
+  try {
+    await incrementPostLike(id);
+    refreshListViews();
+  } catch (error) {
+    console.error('Error al actualizar el like:', error);
+    showToast(`❌ ${error.message || 'No se pudo actualizar el like'}`, 'error');
+  }
 };
 
 window.editPost = function(id) {
   openEditModal(id);
 };
 
-window.deletePost = function(id) {
+window.deletePost = async function(id) {
   if (!confirm('¿Eliminar publicación? Esta acción no se puede deshacer.')) return;
-  const posts = JSON.parse(localStorage.getItem("posts") || "[]");
-  const idx = posts.findIndex(p => p.id === id);
-  if (idx === -1) return;
-  posts.splice(idx,1);
-  localStorage.setItem("posts", JSON.stringify(posts));
-    // trigger cross-tab and same-tab update
-    localStorage.setItem('posts_update_ts', Date.now().toString());
-    window.dispatchEvent(new Event('app:postsUpdated'));
-  showToast("Publicación eliminada", "success");
-  refreshListViews();
+  try {
+    await deletePostById(id);
+    showToast("Publicación eliminada", "success");
+    refreshListViews();
+  } catch (error) {
+    console.error('Error al eliminar la publicación:', error);
+    showToast(`❌ ${error.message || 'No se pudo eliminar la publicación'}`, 'error');
+  }
 };
 
 /* ------------------ Utilidades ------------------ */
 
 function getPostById(id) {
-  const posts = JSON.parse(localStorage.getItem("posts") || "[]");
-  return posts.find(p => p.id === id);
+  const posts = readCachedPosts();
+  return posts.find(p => String(p.id) === String(id));
 }
 
 function refreshListViews() {
@@ -503,7 +503,7 @@ function refreshListViews() {
   if (mainGridContainer) {
     // si el contenedor padre tiene id=postsContainer, re-renderizamos usando la función exportada
     // busco el módulo en window (si se ha importado) — sino simplemente reconstruyo el grid
-    const posts = JSON.parse(localStorage.getItem("posts") || "[]");
+    const posts = readCachedPosts();
     if (typeof window.renderPublishViewExternal === "function") {
       // hook externo para refrescar (si existe)
       window.renderPublishViewExternal(posts);

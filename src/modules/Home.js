@@ -1,22 +1,15 @@
 // src/modules/Home.js
+import { deletePostById, fetchPosts, incrementPostLike, readCachedPosts, writeCachedPosts } from "../utils/postsApi.js";
+
 export async function renderHome(container) {
   const user = JSON.parse(localStorage.getItem("user")) || { role: "visitante" };
   let allPosts = [];
   
-  // Cargar posts desde la API de Render
-  const apiUrl = import.meta.env.VITE_API_URL || 'https://ie-valdivia-backend.onrender.com';
   try {
-    const response = await fetch(`${apiUrl}/api/posts`);
-    if (response.ok) {
-      const data = await response.json();
-      allPosts = Array.isArray(data) ? data : [];
-    } else {
-      console.error("Error fetching posts:", response.statusText);
-      allPosts = JSON.parse(localStorage.getItem("posts") || "[]");
-    }
+    allPosts = await fetchPosts();
   } catch (error) {
     console.error("Error fetching posts:", error);
-    allPosts = JSON.parse(localStorage.getItem("posts") || "[]");
+    allPosts = readCachedPosts();
   }
 
   container.innerHTML = `
@@ -93,8 +86,8 @@ function setupGlobalSearch(container, allPosts) {
       // Add click handlers to preview items
       preview.querySelectorAll('.search-preview-item').forEach(item => {
         item.addEventListener('click', () => {
-          const postId = Number(item.dataset.id);
-          const post = allPosts.find(p => p.id === postId);
+          const postId = item.dataset.id;
+          const post = allPosts.find(p => String(p.id) === String(postId));
           if (post) {
             preview.classList.remove('show');
             input.value = '';
@@ -203,7 +196,7 @@ function renderPostCards(container, posts) {
           <button class="menu-btn" title="Opciones">⋯</button>
           <ul class="menu-options">
             
-            <li class="danger" onclick="deletePost(${post.id})">🗑️ Eliminar</li>
+            <li class="danger" onclick='deletePost(${JSON.stringify(String(post.id))})'>🗑️ Eliminar</li>
           </ul>
         </div>
       ` : ''}
@@ -218,10 +211,10 @@ function renderPostCards(container, posts) {
       
       <div class="meta-row">
         <div class="post-actions">
-          <button class="action-btn ${post.liked ? 'liked' : ''}" onclick="toggleLike(${post.id})">
+          <button class="action-btn ${post.liked ? 'liked' : ''}" onclick='toggleLike(${JSON.stringify(String(post.id))})'>
             ❤️ ${post.likes || 0}
           </button>
-          <button class="action-btn" onclick="openPostDetail(${post.id})">
+          <button class="action-btn" onclick='openPostDetail(${JSON.stringify(String(post.id))})'>
             💬 Ver más
           </button>
         </div>
@@ -266,7 +259,7 @@ function renderPostMedia(post) {
       // Extract video ID and create thumbnail
       const videoId = extractYouTubeVideoId(post.image);
       if (videoId) {
-        return `<img src="https://img.youtube.com/vi/${videoId}/maxresdefault.jpg" alt="${escapeHtml(post.title)}" onerror="this.src='https://img.youtube.com/vi/${videoId}/hqdefault.jpg'" / onClick={editPost(${post.id})}>`;
+        return `<img src="https://img.youtube.com/vi/${videoId}/maxresdefault.jpg" alt="${escapeHtml(post.title)}" onerror="this.src='https://img.youtube.com/vi/${videoId}/hqdefault.jpg'" />`;
       }
     }
     return `<video preload="metadata" style="object-fit: cover;"><source src="${post.image}" /></video>`;
@@ -297,7 +290,9 @@ function extractYouTubeVideoId(url) {
 }
 
 function openPostDetail(postOrId) {
-  const post = typeof postOrId === 'object' ? postOrId : JSON.parse(localStorage.getItem("posts") || "[]").find(p => p.id === postOrId);
+  const post = typeof postOrId === 'object'
+    ? postOrId
+    : readCachedPosts().find(p => String(p.id) === String(postOrId));
   if (!post) return;
 
   import('./PublishView.js').then(mod => {
@@ -306,42 +301,32 @@ function openPostDetail(postOrId) {
 }
 
 // Global functions for post actions
-window.toggleLike = function(postId) {
-  const posts = JSON.parse(localStorage.getItem("posts") || "[]");
-  const postIndex = posts.findIndex(p => p.id === postId);
-  if (postIndex === -1) return;
-
-  posts[postIndex].likes = (posts[postIndex].likes || 0) + 1;
-  posts[postIndex].liked = true;
-  localStorage.setItem("posts", JSON.stringify(posts));
-    // trigger cross-tab and same-tab update
-    localStorage.setItem('posts_update_ts', Date.now().toString());
-    window.dispatchEvent(new Event('app:postsUpdated'));
-
-  // Update UI
-  const likeBtn = document.querySelector(`button[onclick="toggleLike(${postId})"]`);
-  if (likeBtn) {
-    likeBtn.innerHTML = `❤️ ${posts[postIndex].likes}`;
-    likeBtn.classList.add('liked');
+window.toggleLike = async function(postId) {
+  try {
+    const updatedPost = await incrementPostLike(postId);
+    const likeBtn = document.querySelector(`button[onclick='toggleLike("${String(postId)}")']`);
+    if (likeBtn) {
+      likeBtn.innerHTML = `❤️ ${updatedPost.likes || 0}`;
+      likeBtn.classList.add('liked');
+    }
+    showToast("❤️ ¡Te gusta esta publicación!", "success");
+  } catch (error) {
+    console.error('Error al registrar el like:', error);
+    showToast(`❌ ${error.message || 'No se pudo registrar el like'}`, "error");
   }
-
-  showToast("❤️ ¡Te gusta esta publicación!", "success");
 };
 
 window.editPost = function(postId) {
-  const posts = JSON.parse(localStorage.getItem("posts") || "[]");
-  const post = posts.find(p => p.id === postId);
+  const posts = readCachedPosts();
+  const post = posts.find(p => String(p.id) === String(postId));
   if (!post) return;
 
   import('./Publish.js').then(mod => {
     mod.renderEditPost(document.body, post, (editedPost) => {
-      const postIndex = posts.findIndex(p => p.id === postId);
+      const postIndex = posts.findIndex(p => String(p.id) === String(postId));
       if (postIndex !== -1) {
         posts[postIndex] = editedPost;
-        localStorage.setItem("posts", JSON.stringify(posts));
-    // trigger cross-tab and same-tab update
-    localStorage.setItem('posts_update_ts', Date.now().toString());
-    window.dispatchEvent(new Event('app:postsUpdated'));
+        writeCachedPosts(posts);
         showToast("✅ Publicación actualizada", "success");
         setTimeout(() => location.reload(), 1000);
       }
@@ -349,18 +334,17 @@ window.editPost = function(postId) {
   });
 };
 
-window.deletePost = function(postId) {
+window.deletePost = async function(postId) {
   if (!confirm('¿Estás seguro de que quieres eliminar esta publicación?')) return;
 
-  const posts = JSON.parse(localStorage.getItem("posts") || "[]");
-  const filteredPosts = posts.filter(p => p.id !== postId);
-  localStorage.setItem("posts", JSON.stringify(filteredPosts));
-    // trigger cross-tab and same-tab update
-    localStorage.setItem('posts_update_ts', Date.now().toString());
-    window.dispatchEvent(new Event('app:postsUpdated'));
-
-  showToast("🗑️ Publicación eliminada", "success");
-  setTimeout(() => location.reload(), 1000);
+  try {
+    await deletePostById(postId);
+    showToast("🗑️ Publicación eliminada", "success");
+    setTimeout(() => location.reload(), 1000);
+  } catch (error) {
+    console.error('Error al eliminar la publicación:', error);
+    showToast(`❌ ${error.message || 'No se pudo eliminar la publicación'}`, "error");
+  }
 };
 
 function showToast(message, type = 'success') {
