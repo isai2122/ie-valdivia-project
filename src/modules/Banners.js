@@ -1,5 +1,5 @@
 // src/modules/Banners.js
-let banners = JSON.parse(localStorage.getItem("banners")) || [];
+let banners = [];
 let currentIndex = 0;
 let autoplayInterval = null;
 
@@ -8,12 +8,30 @@ function isAdmin() {
   return user.role === "admin";
 }
 
-export function setupBannerSection() {
+// Cargar banners desde la API de Render
+async function loadBannersFromAPI() {
+  const apiUrl = import.meta.env.VITE_API_URL || 'https://ie-valdivia-backend.onrender.com';
+  try {
+    const response = await fetch(`${apiUrl}/api/banners`);
+    if (response.ok) {
+      const data = await response.json();
+      banners = Array.isArray(data) ? data : [];
+    } else {
+      console.error("Error fetching banners:", response.statusText);
+      banners = JSON.parse(localStorage.getItem("banners") || "[]");
+    }
+  } catch (error) {
+    console.error("Error fetching banners:", error);
+    banners = JSON.parse(localStorage.getItem("banners") || "[]");
+  }
+}
+
+export async function setupBannerSection() {
   const container = document.getElementById("bannerSection");
   if (!container) return;
 
-  // Always read from localStorage (sincronizar)
-  banners = JSON.parse(localStorage.getItem("banners")) || [];
+  // Cargar banners desde la API
+  await loadBannersFromAPI();
 
   // Añade botón fijo de admin si corresponde (evita duplicados)
   if (isAdmin()) addAdminEditButton();
@@ -25,8 +43,6 @@ function addAdminEditButton() { /* no-op: admin edit button moved to floating me
 function renderBanners() {
   const container = document.getElementById("bannerSection");
   if (!container) return;
-
-  banners = JSON.parse(localStorage.getItem("banners")) || [];
 
   if (!banners.length) {
     container.innerHTML = `
@@ -67,7 +83,7 @@ function renderBanners() {
 }
 
 function renderBannerContentHTML(banner) {
-  const url = banner.url || '';
+  const url = banner.image_url || banner.url || '';
   const isYouTube = /youtube\.com|youtu\.be/i.test(url);
   const isVideoFile = /\.(mp4|webm|ogg)(\?.*)?$/i.test(url);
 
@@ -253,17 +269,35 @@ export function openBannerModal() {
         finalUrl = url;
       }
 
-      banners.push({ url: finalUrl, title: title || "", href: href || "" });
-      saveBanners();
-      renderBannerList();
-      renderBanners();
+      // Enviar a la API de Render
+      const apiUrl = import.meta.env.VITE_API_URL || 'https://ie-valdivia-backend.onrender.com';
+      const bannerData = {
+        title: title || "Banner",
+        image_url: finalUrl,
+        active: true
+      };
 
-      fileInput.value = "";
-      urlInput.value = "";
-      titleInput.value = "";
-      hrefInput.value = "";
+      const response = await fetch(`${apiUrl}/api/banners`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(bannerData)
+      });
 
-      showToast("✅ Banner agregado exitosamente", "success");
+      if (response.ok) {
+        // Recargar banners desde la API
+        await loadBannersFromAPI();
+        renderBannerList();
+        renderBanners();
+
+        fileInput.value = "";
+        urlInput.value = "";
+        titleInput.value = "";
+        hrefInput.value = "";
+
+        showToast("✅ Banner agregado exitosamente", "success");
+      } else {
+        showToast("❌ Error al agregar banner", "error");
+      }
     } catch (err) {
       console.error(err);
       showToast("❌ Error agregando banner", "error");
@@ -275,8 +309,6 @@ function renderBannerList() {
   const list = document.getElementById("bannerList");
   if (!list) return;
 
-  banners = JSON.parse(localStorage.getItem("banners")) || [];
-
   if (!banners.length) {
     list.innerHTML = `<div style="padding:18px;text-align:center;color:var(--muted);border-radius:8px;border:1px dashed rgba(255,255,255,0.03)">No hay banners guardados</div>`;
     return;
@@ -285,116 +317,79 @@ function renderBannerList() {
   list.innerHTML = banners.map((b, i) => `
     <div style="display:flex;gap:12px;align-items:center;padding:10px;background:rgba(255,255,255,0.02);border-radius:10px;margin-bottom:8px;border:1px solid rgba(255,255,255,0.03)">
       <div style="width:140px;flex-shrink:0;">
-        ${isVideoUrl(b.url) ? `<div style="width:140px;height:80px;background:#000;border-radius:8px;overflow:hidden"><video src="${escapeHtml(b.url)}" style="width:100%;height:100%;object-fit:cover" muted loop></video></div>` : `<img src="${escapeHtml(b.url)}" style="width:140px;height:80px;object-fit:cover;border-radius:8px;" alt="thumb" />`}
+        ${isVideoUrl(b.image_url || b.url) ? `<div style="width:140px;height:80px;background:#000;border-radius:8px;overflow:hidden"><video src="${escapeHtml(b.image_url || b.url)}" style="width:100%;height:100%;object-fit:cover" muted loop></video></div>` : `<img src="${escapeHtml(b.image_url || b.url)}" style="width:140px;height:80px;object-fit:cover;border-radius:8px;" alt="thumb" />`}
       </div>
       <div style="flex:1;display:grid;gap:8px;">
-        <input data-i="${i}" class="bn-title" value="${escapeHtml(b.title||'')}" placeholder="Título" style="padding:8px;border-radius:8px;background:transparent;border:1px solid rgba(255,255,255,0.03)" />
-        <input data-i="${i}" class="bn-href" value="${escapeHtml(b.href||'')}" placeholder="Enlace (opcional)" style="padding:8px;border-radius:8px;background:transparent;border:1px solid rgba(255,255,255,0.03)" />
-      </div>
-      <div style="display:flex;flex-direction:column;gap:8px;">
-        <input type="file" data-i="${i}" class="bn-file" accept="image/*,video/*" />
-        <button class="btn-cancelar bn-del" data-i="${i}">Eliminar</button>
+        <input data-i="${i}" class="bn-title" value="${escapeHtml(b.title||'')}" placeholder="Título" style="padding:8px;border-radius:8px;background:transparent;border:1px solid rgba(255,255,255,0.04);color:var(--text)" />
+        <button class="btn-cancelar" style="padding:6px 12px;font-size:12px" onclick="deleteBanner(${b.id})">🗑️ Eliminar</button>
       </div>
     </div>
-  `).join("");
-
-  list.querySelectorAll(".bn-del").forEach(btn => {
-    btn.addEventListener("click", (e) => {
-      const idx = Number(e.currentTarget.dataset.i);
-      if (!confirm("Eliminar banner?")) return;
-      banners.splice(idx, 1);
-      saveBanners();
-      renderBannerList();
-      renderBanners();
-      if (currentIndex >= banners.length) currentIndex = 0;
-      showToast("🗑️ Banner eliminado", "success");
-    });
-  });
-
-  list.querySelectorAll(".bn-title").forEach(inp => {
-    inp.addEventListener("change", (e) => {
-      const idx = Number(e.target.dataset.i);
-      banners[idx].title = e.target.value;
-      saveBanners();
-      renderBanners();
-    });
-  });
-
-  list.querySelectorAll(".bn-href").forEach(inp => {
-    inp.addEventListener("change", (e) => {
-      const idx = Number(e.target.dataset.i);
-      banners[idx].href = e.target.value;
-      saveBanners();
-    });
-  });
-
-  list.querySelectorAll(".bn-file").forEach(inp => {
-    inp.addEventListener("change", async (e) => {
-      const f = e.target.files[0];
-      if (!f) return;
-      if (f.size > 2 * 1024 * 1024) {
-        showToast("❌ Archivo muy grande. Máximo 2MB", "error");
-        return;
-      }
-      try {
-        const url = await fileToDataURL(f);
-        const idx = Number(e.target.dataset.i);
-        banners[idx].url = url;
-        saveBanners();
-        renderBannerList();
-        renderBanners();
-        showToast("✅ Imagen del banner actualizada", "success");
-      } catch {
-        showToast("❌ Error al leer archivo", "error");
-      }
-    });
-  });
+  `).join('');
 }
 
-// util: detecta vídeo por url
-function isVideoUrl(url = "") {
+function isVideoUrl(url) {
   if (!url) return false;
-  if (/youtube\.com|youtu\.be/i.test(url)) return true;
-  return /\.(mp4|webm|ogg)(\?.*)?$/i.test(url);
-}
-
-function saveBanners() {
-  localStorage.setItem("banners", JSON.stringify(banners));
+  return /\.(mp4|webm|ogg|mov)(\?.*)?$/i.test(url) || /youtube\.com|youtu\.be/.test(url);
 }
 
 function fileToDataURL(file) {
   return new Promise((resolve, reject) => {
     const reader = new FileReader();
-    reader.onload = () => resolve(String(reader.result));
-    reader.onerror = () => reject(new Error("Error reading file"));
+    reader.onload = () => resolve(reader.result);
+    reader.onerror = reject;
     reader.readAsDataURL(file);
   });
 }
 
 function escapeHtml(text = "") {
   const div = document.createElement("div");
-  div.textContent = text || "";
+  div.textContent = text;
   return div.innerHTML;
 }
 
-function showToast(message, type = "success") {
-  const toast = document.createElement("div");
-  toast.className = "toast-message";
+function showToast(message, type = 'success') {
+  const toast = document.createElement('div');
+  toast.className = 'toast-message';
   toast.textContent = message;
-  if (type === "error") {
-    toast.style.background = "linear-gradient(135deg, var(--danger), #b91c1c)";
+  
+  if (type === 'error') {
+    toast.style.background = 'linear-gradient(135deg, var(--danger), #b91c1c)';
   }
+  
   document.body.appendChild(toast);
+  
   setTimeout(() => {
     if (toast.parentNode) {
-      toast.style.animation = "slideInRight 0.3s ease-out reverse";
+      toast.style.opacity = '0';
+      toast.style.transition = 'opacity 0.28s';
       setTimeout(() => toast.remove(), 300);
     }
   }, 3000);
 }
 
-// Auto-sync listener to refresh when posts/banners update
-window.addEventListener('app:postsUpdated', function(){
-  try { if (typeof renderBanners === 'function') renderBanners(); } catch(e){}
-});
-window.addEventListener('storage', function(e){ if (e.key==='posts' || e.key==='posts_update_ts') { try { if (typeof renderBanners === 'function') renderBanners(); } catch(e){} } });
+// Global function to delete banner
+window.deleteBanner = async function(bannerId) {
+  if (!confirm('¿Está seguro de que desea eliminar este banner?')) return;
+  
+  const apiUrl = import.meta.env.VITE_API_URL || 'https://ie-valdivia-backend.onrender.com';
+  try {
+    const response = await fetch(`${apiUrl}/api/banners/${bannerId}`, {
+      method: "DELETE"
+    });
+    
+    if (response.ok) {
+      await loadBannersFromAPI();
+      renderBannerList();
+      renderBanners();
+      showToast("✅ Banner eliminado", "success");
+    } else {
+      showToast("❌ Error al eliminar banner", "error");
+    }
+  } catch (error) {
+    console.error("Error deleting banner:", error);
+    showToast("❌ Error al eliminar banner", "error");
+  }
+};
+
+// Global function to open banner editor
+window.openBannerEditor = openBannerModal;

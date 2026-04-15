@@ -194,16 +194,16 @@ async function handlePublishSubmit(modal, onComplete, editPost, isEditing) {
       updatedAt: new Date().toISOString()
     };
 
-    const apiUrl = import.meta.env.VITE_API_URL || 'http://localhost:8000'; // Default to local backend if not set
+    const apiUrl = import.meta.env.VITE_API_URL || 'https://ie-valdivia-backend.onrender.com';
     let response;
     if (isEditing) {
-      response = await fetch(`${apiUrl}/posts/${editPost.id}`, {
+      response = await fetch(`${apiUrl}/api/posts/${editPost.id}`, {
         method: "PUT",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify(postData),
       });
     } else {
-      response = await fetch(`${apiUrl}/posts`, {
+      response = await fetch(`${apiUrl}/api/posts`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify(postData),

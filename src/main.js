@@ -32,13 +32,13 @@ function initializeApp() {
     // Routing de páginas
     switch (page) {
       case "home":
-        renderHome(main);
+        renderHome(main).catch(err => console.error('Error rendering home:', err));
         break;
       case "news":
-        renderNews(main, allPosts);
+        renderNews(main, allPosts).catch(err => console.error('Error rendering news:', err));
         break;
       case "projects":
-        renderProjects(main, allPosts);
+        renderProjects(main, allPosts).catch(err => console.error('Error rendering projects:', err));
         break;
       case "about":
         renderAbout(main);

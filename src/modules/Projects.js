@@ -1,7 +1,25 @@
 import { renderPublishView } from './PublishView.js';
 
-export function renderProjects(container, posts = null) {
-  const allPosts = posts || JSON.parse(localStorage.getItem("posts") || "[]");
+export async function renderProjects(container, posts = null) {
+  let allPosts = posts || [];
+  
+  // Si no se pasan posts, cargar desde la API de Render
+  if (!posts) {
+    const apiUrl = import.meta.env.VITE_API_URL || 'https://ie-valdivia-backend.onrender.com';
+    try {
+      const response = await fetch(`${apiUrl}/api/posts`);
+      if (response.ok) {
+        const data = await response.json();
+        allPosts = Array.isArray(data) ? data : [];
+      } else {
+        console.error("Error fetching posts:", response.statusText);
+        allPosts = JSON.parse(localStorage.getItem("posts") || "[]");
+      }
+    } catch (error) {
+      console.error("Error fetching posts:", error);
+      allPosts = JSON.parse(localStorage.getItem("posts") || "[]");
+    }
+  }
   const projectPosts = allPosts.filter(post => post.category === 'proyectos');
   const user = JSON.parse(localStorage.getItem("user") || "{}");
 

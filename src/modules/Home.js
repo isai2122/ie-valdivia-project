@@ -1,7 +1,23 @@
 // src/modules/Home.js
-export function renderHome(container) {
+export async function renderHome(container) {
   const user = JSON.parse(localStorage.getItem("user")) || { role: "visitante" };
-  const allPosts = JSON.parse(localStorage.getItem("posts") || "[]");
+  let allPosts = [];
+  
+  // Cargar posts desde la API de Render
+  const apiUrl = import.meta.env.VITE_API_URL || 'https://ie-valdivia-backend.onrender.com';
+  try {
+    const response = await fetch(`${apiUrl}/api/posts`);
+    if (response.ok) {
+      const data = await response.json();
+      allPosts = Array.isArray(data) ? data : [];
+    } else {
+      console.error("Error fetching posts:", response.statusText);
+      allPosts = JSON.parse(localStorage.getItem("posts") || "[]");
+    }
+  } catch (error) {
+    console.error("Error fetching posts:", error);
+    allPosts = JSON.parse(localStorage.getItem("posts") || "[]");
+  }
 
   container.innerHTML = `
     <div id="globalSearchBar">
