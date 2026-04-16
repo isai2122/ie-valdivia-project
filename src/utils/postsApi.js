@@ -14,6 +14,7 @@ export function normalizePost(raw = {}) {
     category: raw.category || 'general',
     author: raw.author || 'admin',
     image: raw.image || raw.image_url || null,
+    external_url: raw.external_url || null,
     type: raw.type || (raw.media_type === 'video' ? 'video' : 'image'),
     media_type: raw.media_type || (raw.type === 'video' ? 'video' : 'image'),
     tags: asArray(raw.tags),
@@ -44,13 +45,14 @@ export function writeCachedPosts(posts) {
 }
 
 function buildPostPayload(post = {}) {
+  // Asegurarnos de que el campo image y external_url se envíen correctamente
   return {
     title: post.title || '',
     description: post.description || '',
     category: post.category || 'general',
     author: post.author || 'admin',
     media_type: post.media_type || (post.type === 'video' ? 'video' : 'image'),
-    external_url: post.external_url || null,
+    external_url: post.external_url || post.image || null,
     image: post.image || null,
     type: post.type || 'image',
     tags: asArray(post.tags),
